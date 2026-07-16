@@ -1250,13 +1250,13 @@ AquaSimDDBR::HandlePktForward(Ptr<Packet> p)
     m_pc->AddPacket(dbrh.GetPacketID());
 
   // common settings for forwarding
-  ash.SetNumForwards((ash.GetNumForwards()++));
+  ash.SetNumForwards(ash.GetNumForwards() + 1);
   ash.SetSAddr(AquaSimAddress::ConvertFrom(GetNetDevice()->GetAddress()));
   ash.SetDirection(AquaSimHeader::DOWN);
   //ash->addr_type_ = AF_INET;
   ptag.SetPacketType(AquaSimPtTag::PT_DBR);
   ash.SetSize(dbrh.Size() + IP_HDR_LEN);
-  ash.SetNextHop(AquaSimAddress:GetBroadcast());
+  ash.SetNextHop(AquaSimAddress::GetBroadcast());
 
   // finally broadcasting it!
   NS_ASSERT(!ash.GetErrorFlag());

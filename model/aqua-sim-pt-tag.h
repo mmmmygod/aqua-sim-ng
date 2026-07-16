@@ -69,6 +69,7 @@ public:
     PT_GOAL_REQ,
     PT_GOAL_REP,
     PT_GOAL_ACK,
+    PT_UW_AODV,
     } PacketType_tag;
 
 private:

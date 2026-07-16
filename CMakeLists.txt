@@ -44,6 +44,7 @@ build_lib(
         model/aqua-sim-header-routing.cc
         model/aqua-sim-routing-dynamic.cc
         model/aqua-sim-routing-flooding.cc
+        model/aqua-sim-routing-uw-aodv.cc
         model/aqua-sim-routing-buffer.cc
         model/aqua-sim-routing-vbf.cc
         model/aqua-sim-routing-dbr.cc
@@ -118,6 +119,7 @@ build_lib(
         model/aqua-sim-header-routing.h
         model/aqua-sim-routing-dynamic.h
         model/aqua-sim-routing-flooding.h
+        model/aqua-sim-routing-uw-aodv.h
         model/aqua-sim-datastructure.h
         model/aqua-sim-routing-buffer.h
         model/aqua-sim-routing-vbf.h
@@ -173,6 +175,38 @@ build_lib_example(
                       ${libenergy}
                       ${libmobility}
                       ${libapplications}
+                      ${libaqua-sim-ng}
+)
+
+build_lib_example(
+    NAME uw-aodv-line
+    SOURCE_FILES examples/uw-aodv-line.cc
+    LIBRARIES_TO_LINK ${libnetwork}
+                      ${libmobility}
+                      ${libapplications}
+                      ${libaqua-sim-ng}
+)
+
+build_lib_example(
+    NAME uw-aodv-diamond
+    SOURCE_FILES examples/uw-aodv-diamond.cc
+    LIBRARIES_TO_LINK ${libnetwork}
+                      ${libmobility}
+                      ${libapplications}
+                      ${libaqua-sim-ng}
+)
+
+build_lib_example(
+    NAME uw-aodv-header-check
+    SOURCE_FILES examples/uw-aodv-header-check.cc
+    LIBRARIES_TO_LINK ${libnetwork}
+                      ${libaqua-sim-ng}
+)
+
+build_lib_example(
+    NAME uw-aodv-route-freshness-check
+    SOURCE_FILES examples/uw-aodv-route-freshness-check.cc
+    LIBRARIES_TO_LINK ${libnetwork}
                       ${libaqua-sim-ng}
 )
 
