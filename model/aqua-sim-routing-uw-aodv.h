@@ -20,6 +20,7 @@
 namespace ns3 {
 
 class AquaSimUWAodvRouteFreshnessTest;
+class AquaSimUWAodvRerrTest;
 
 /**
  * \ingroup aqua-sim-ng
@@ -33,7 +34,8 @@ public:
   {
     UWAODV_DATA = 1,
     UWAODV_RREQ = 2,
-    UWAODV_RREP = 3
+    UWAODV_RREP = 3,
+    UWAODV_RERR = 4
   };
 
   enum Flags
@@ -108,6 +110,7 @@ protected:
 
 private:
   friend class AquaSimUWAodvRouteFreshnessTest;
+  friend class AquaSimUWAodvRerrTest;
 
   struct RouteEntry
   {
@@ -117,6 +120,7 @@ private:
     bool validSeqNo;
     bool valid;
     Time expire;
+    std::set<AquaSimAddress> precursors;
   };
 
   struct RreqCandidate
@@ -162,6 +166,10 @@ private:
                 AquaSimHeader ash,
                 AquaSimUWAodvHeader aodv,
                 AquaSimAddress previousHop);
+  bool RecvRerr(Ptr<Packet> packet,
+                AquaSimHeader ash,
+                AquaSimUWAodvHeader aodv,
+                AquaSimAddress previousHop);
 
   bool RouteOutput(Ptr<Packet> packet, const Address& dest);
   void PrepareDataPacket(Ptr<Packet> packet, AquaSimHeader& ash, AquaSimAddress destination);
@@ -177,6 +185,9 @@ private:
   void SendRreq(AquaSimAddress destination);
   void SendRrep(AquaSimAddress origin, AquaSimAddress destination);
   void SendRrep(AquaSimAddress origin, AquaSimAddress destination, AquaSimAddress nextHop);
+  void SendRerr(AquaSimAddress unreachableDestination,
+                uint32_t unreachableDestSeqNo,
+                const std::set<AquaSimAddress>& precursors);
   void QueueRrepCandidate(const RequestKey& key,
                           const AquaSimUWAodvHeader& aodv,
                           AquaSimAddress previousHop);
@@ -185,7 +196,15 @@ private:
                              const RreqCandidate& current) const;
   void ForwardRreq(Ptr<Packet> packet, AquaSimHeader ash, AquaSimUWAodvHeader aodv);
   void ForwardRrep(Ptr<Packet> packet, AquaSimHeader ash, AquaSimUWAodvHeader aodv, AquaSimAddress nextHop);
+  void ForwardRerr(AquaSimAddress unreachableDestination,
+                   uint32_t unreachableDestSeqNo,
+                   const std::set<AquaSimAddress>& precursors);
   void RouteRequestTimeout(AquaSimAddress destination, uint32_t attempt);
+  void AddPrecursor(AquaSimAddress destination, AquaSimAddress precursor);
+  std::set<AquaSimAddress> InvalidateRoute(AquaSimAddress destination,
+                                           uint32_t destSeqNo,
+                                           bool validSeqNo);
+  bool ShouldAcceptRerr(AquaSimAddress destination, uint32_t destSeqNo) const;
 
   void AddAodvTag(Ptr<Packet> packet);
   bool IsAodvPacket(Ptr<Packet> packet) const;
@@ -213,6 +232,8 @@ private:
   TracedValue<uint32_t> m_rreqRx;
   TracedValue<uint32_t> m_rrepTx;
   TracedValue<uint32_t> m_rrepRx;
+  TracedValue<uint32_t> m_rerrTx;
+  TracedValue<uint32_t> m_rerrRx;
   TracedValue<uint32_t> m_queuedPackets;
   TracedValue<uint32_t> m_queueDrops;
   TracedValue<uint32_t> m_forwardedData;

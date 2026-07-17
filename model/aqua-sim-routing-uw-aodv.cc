@@ -240,6 +240,8 @@ AquaSimUWAodvRouting::AquaSimUWAodvRouting()
     m_rreqRx(0),
     m_rrepTx(0),
     m_rrepRx(0),
+    m_rerrTx(0),
+    m_rerrRx(0),
     m_queuedPackets(0),
     m_queueDrops(0),
     m_forwardedData(0),
@@ -308,6 +310,14 @@ AquaSimUWAodvRouting::GetTypeId()
     .AddTraceSource("RrepRx",
                     "Number of RREP packets received.",
                     MakeTraceSourceAccessor(&AquaSimUWAodvRouting::m_rrepRx),
+                    "ns3::TracedValueCallback::Uint32")
+    .AddTraceSource("RerrTx",
+                    "Number of RERR packets transmitted.",
+                    MakeTraceSourceAccessor(&AquaSimUWAodvRouting::m_rerrTx),
+                    "ns3::TracedValueCallback::Uint32")
+    .AddTraceSource("RerrRx",
+                    "Number of RERR packets received.",
+                    MakeTraceSourceAccessor(&AquaSimUWAodvRouting::m_rerrRx),
                     "ns3::TracedValueCallback::Uint32")
     .AddTraceSource("QueuedPackets",
                     "Number of data packets queued during route discovery.",
@@ -497,6 +507,10 @@ AquaSimUWAodvRouting::UpdateRoute(AquaSimAddress destination,
   entry.validSeqNo = validSeqNo;
   entry.valid = true;
   entry.expire = Simulator::Now() + lifetime;
+  if (LookupAnyRoute(destination, current))
+    {
+      entry.precursors = current.precursors;
+    }
   m_routeTable[destination] = entry;
 }
 
@@ -531,6 +545,9 @@ AquaSimUWAodvRouting::RecvAodvPacket(Ptr<Packet> packet)
     case AquaSimUWAodvHeader::UWAODV_RREP:
       ++m_rrepRx;
       return RecvRrep(packet, ash, aodv, previousHop);
+    case AquaSimUWAodvHeader::UWAODV_RERR:
+      ++m_rerrRx;
+      return RecvRerr(packet, ash, aodv, previousHop);
     default:
       NS_LOG_DEBUG("Dropping unknown UWAODV packet type "
                    << static_cast<uint32_t>(aodv.GetType()));
@@ -562,6 +579,7 @@ AquaSimUWAodvRouting::RecvData(Ptr<Packet> packet,
       return false;
     }
 
+  AddPrecursor(aodv.GetDestination(), ash.GetSAddr());
   ash.SetNumForwards(ash.GetNumForwards() + 1);
   aodv.SetHopCount(aodv.GetHopCount() + 1);
   packet->AddHeader(aodv);
@@ -672,7 +690,33 @@ AquaSimUWAodvRouting::RecvRrep(Ptr<Packet> packet,
       return false;
     }
 
+  AddPrecursor(aodv.GetDestination(), route.nextHop);
+  AddPrecursor(aodv.GetOrigin(), previousHop);
   ForwardRrep(packet, ash, aodv, route.nextHop);
+  return true;
+}
+
+bool
+AquaSimUWAodvRouting::RecvRerr(Ptr<Packet> packet,
+                               AquaSimHeader ash,
+                               AquaSimUWAodvHeader aodv,
+                               AquaSimAddress previousHop)
+{
+  (void)packet;
+  (void)ash;
+
+  AquaSimAddress unreachableDestination = aodv.GetDestination();
+  uint32_t unreachableDestSeqNo = aodv.GetDestSeqNo();
+
+  if (!ShouldAcceptRerr(unreachableDestination, unreachableDestSeqNo))
+    {
+      return false;
+    }
+
+  std::set<AquaSimAddress> precursors =
+    InvalidateRoute(unreachableDestination, unreachableDestSeqNo, true);
+  precursors.erase(previousHop);
+  ForwardRerr(unreachableDestination, unreachableDestSeqNo, precursors);
   return true;
 }
 
@@ -756,6 +800,13 @@ AquaSimUWAodvRouting::ForwardDataPacket(Ptr<Packet> packet, AquaSimAddress desti
   RouteEntry route;
   if (!LookupRoute(destination, route))
     {
+      RouteEntry staleRoute;
+      if (LookupAnyRoute(destination, staleRoute) && staleRoute.valid)
+        {
+          std::set<AquaSimAddress> precursors =
+            InvalidateRoute(destination, staleRoute.destSeqNo, staleRoute.validSeqNo);
+          SendRerr(destination, staleRoute.destSeqNo, precursors);
+        }
       return false;
     }
 
@@ -1095,6 +1146,117 @@ AquaSimUWAodvRouting::ForwardRrep(Ptr<Packet> packet,
 
   ++m_rrepTx;
   SendDown(packet, nextHop, Seconds(0));
+}
+
+void
+AquaSimUWAodvRouting::SendRerr(AquaSimAddress unreachableDestination,
+                               uint32_t unreachableDestSeqNo,
+                               const std::set<AquaSimAddress>& precursors)
+{
+  ForwardRerr(unreachableDestination, unreachableDestSeqNo, precursors);
+}
+
+void
+AquaSimUWAodvRouting::ForwardRerr(AquaSimAddress unreachableDestination,
+                                  uint32_t unreachableDestSeqNo,
+                                  const std::set<AquaSimAddress>& precursors)
+{
+  for (std::set<AquaSimAddress>::const_iterator it = precursors.begin();
+       it != precursors.end();
+       ++it)
+    {
+      if (*it == GetLocalAddress() || *it == AquaSimAddress::GetBroadcast())
+        {
+          continue;
+        }
+
+      Ptr<Packet> packet = Create<Packet>();
+      AquaSimUWAodvHeader aodv;
+      aodv.SetType(AquaSimUWAodvHeader::UWAODV_RERR);
+      aodv.SetHopCount(0);
+      aodv.SetRequestId(0);
+      aodv.SetOrigin(GetLocalAddress());
+      aodv.SetDestination(unreachableDestination);
+      aodv.SetOriginSeqNo(m_sequenceNumber);
+      aodv.SetDestSeqNo(unreachableDestSeqNo);
+      aodv.SetLifetime(0);
+
+      AquaSimHeader ash;
+      ash.SetDirection(AquaSimHeader::DOWN);
+      ash.SetNextHop(*it);
+      ash.SetSAddr(GetLocalAddress());
+      ash.SetDAddr(*it);
+      ash.SetSize(aodv.GetSerializedSize() + ash.GetSerializedSize());
+      ash.SetUId(packet->GetUid());
+      ash.SetTimeStamp(Simulator::Now());
+
+      AddAodvTag(packet);
+      packet->AddHeader(aodv);
+      packet->AddHeader(ash);
+
+      ++m_rerrTx;
+      SendDown(packet, *it, Seconds(0));
+    }
+}
+
+void
+AquaSimUWAodvRouting::AddPrecursor(AquaSimAddress destination, AquaSimAddress precursor)
+{
+  if (precursor == GetLocalAddress() ||
+      precursor == AquaSimAddress::GetBroadcast() ||
+      IsBroadcastDestination(destination))
+    {
+      return;
+    }
+
+  std::map<AquaSimAddress, RouteEntry>::iterator it = m_routeTable.find(destination);
+  if (it == m_routeTable.end())
+    {
+      return;
+    }
+
+  it->second.precursors.insert(precursor);
+}
+
+std::set<AquaSimAddress>
+AquaSimUWAodvRouting::InvalidateRoute(AquaSimAddress destination,
+                                      uint32_t destSeqNo,
+                                      bool validSeqNo)
+{
+  std::set<AquaSimAddress> precursors;
+  std::map<AquaSimAddress, RouteEntry>::iterator it = m_routeTable.find(destination);
+  if (it == m_routeTable.end())
+    {
+      return precursors;
+    }
+
+  precursors = it->second.precursors;
+  it->second.valid = false;
+  it->second.expire = Simulator::Now();
+  if (validSeqNo &&
+      (!it->second.validSeqNo ||
+       destSeqNo == it->second.destSeqNo ||
+       IsSeqNoNewer(destSeqNo, it->second.destSeqNo)))
+    {
+      it->second.destSeqNo = destSeqNo;
+      it->second.validSeqNo = true;
+    }
+  return precursors;
+}
+
+bool
+AquaSimUWAodvRouting::ShouldAcceptRerr(AquaSimAddress destination, uint32_t destSeqNo) const
+{
+  RouteEntry route;
+  if (!LookupAnyRoute(destination, route))
+    {
+      return false;
+    }
+  if (!route.validSeqNo)
+    {
+      return true;
+    }
+  return destSeqNo == route.destSeqNo || IsSeqNoNewer(destSeqNo, route.destSeqNo);
 }
 
 void

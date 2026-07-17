@@ -211,6 +211,13 @@ build_lib_example(
 )
 
 build_lib_example(
+    NAME uw-aodv-rerr-check
+    SOURCE_FILES examples/uw-aodv-rerr-check.cc
+    LIBRARIES_TO_LINK ${libnetwork}
+                      ${libaqua-sim-ng}
+)
+
+build_lib_example(
     NAME GOAL_string
     SOURCE_FILES examples/GOAL_string.cc
     LIBRARIES_TO_LINK ${libnetwork}
