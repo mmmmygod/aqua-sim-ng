@@ -218,6 +218,15 @@ build_lib_example(
 )
 
 build_lib_example(
+    NAME uw-aodv-rerr-expiry
+    SOURCE_FILES examples/uw-aodv-rerr-expiry.cc
+    LIBRARIES_TO_LINK ${libnetwork}
+                      ${libmobility}
+                      ${libapplications}
+                      ${libaqua-sim-ng}
+)
+
+build_lib_example(
     NAME GOAL_string
     SOURCE_FILES examples/GOAL_string.cc
     LIBRARIES_TO_LINK ${libnetwork}
