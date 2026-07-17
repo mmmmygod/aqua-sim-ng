@@ -61,6 +61,18 @@ public:
     ok &= Check(routing.IsSeqNoNewer(1, 0xffffffff),
                 "sequence number comparison should handle 32-bit wrap-around");
 
+    AquaSimAddress destination(9);
+    ok &= Check(routing.GetRreqHopLimit(destination, 1) == 1,
+                "first expanding-ring RREQ should use TtlStart");
+    ok &= Check(routing.GetRreqHopLimit(destination, 2) == 3,
+                "second expanding-ring RREQ should add TtlIncrement");
+    ok &= Check(routing.GetRreqHopLimit(destination, 3) == 5,
+                "third expanding-ring RREQ should keep expanding below TtlThreshold");
+    ok &= Check(routing.GetRreqHopLimit(destination, 4) == 7,
+                "fourth expanding-ring RREQ may reach TtlThreshold");
+    ok &= Check(routing.GetRreqHopLimit(destination, 5) == 32,
+                "expanding-ring RREQ should switch to NetDiameter after TtlThreshold");
+
     return ok;
   }
 

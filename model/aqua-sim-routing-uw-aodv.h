@@ -58,6 +58,7 @@ public:
   void SetOriginSeqNo(uint32_t seqNo);
   void SetDestSeqNo(uint32_t seqNo);
   void SetLifetime(uint32_t lifetimeMs);
+  void SetHopLimit(uint16_t hopLimit);
   void SetFlags(uint8_t flags);
   void SetUnknownDestSeqNo(bool unknown);
 
@@ -69,6 +70,7 @@ public:
   uint32_t GetOriginSeqNo() const;
   uint32_t GetDestSeqNo() const;
   uint32_t GetLifetime() const;
+  uint16_t GetHopLimit() const;
   uint8_t GetFlags() const;
   bool IsUnknownDestSeqNo() const;
 
@@ -86,6 +88,7 @@ private:
   uint32_t m_originSeqNo;
   uint32_t m_destSeqNo;
   uint32_t m_lifetimeMs;
+  uint16_t m_hopLimit;
   uint8_t m_flags;
 };
 
@@ -200,6 +203,7 @@ private:
                    uint32_t unreachableDestSeqNo,
                    const std::set<AquaSimAddress>& precursors);
   void RouteRequestTimeout(AquaSimAddress destination, uint32_t attempt);
+  uint16_t GetRreqHopLimit(AquaSimAddress destination, uint32_t attempt);
   void AddPrecursor(AquaSimAddress destination, AquaSimAddress precursor);
   std::set<AquaSimAddress> InvalidateRoute(AquaSimAddress destination,
                                            uint32_t destSeqNo,
@@ -214,6 +218,7 @@ private:
   std::map<AquaSimAddress, RouteEntry> m_routeTable;
   std::map<AquaSimAddress, std::deque<Ptr<Packet>>> m_pendingQueue;
   std::map<AquaSimAddress, uint32_t> m_rreqAttempts;
+  std::map<AquaSimAddress, uint16_t> m_rreqHopLimits;
   std::map<RequestKey, RreqCollection> m_rreqCollections;
   std::set<AquaSimAddress> m_activeDiscoveries;
   std::set<RequestKey> m_seenRreqs;
@@ -223,6 +228,10 @@ private:
   uint32_t m_maxQueueLen;
   uint32_t m_maxRreqAttempts;
   uint16_t m_maxHopCount;
+  uint16_t m_ttlStart;
+  uint16_t m_ttlIncrement;
+  uint16_t m_ttlThreshold;
+  uint16_t m_netDiameter;
   bool m_enableRreqCollection;
   Time m_rreqTimeout;
   Time m_rrepWaitTime;

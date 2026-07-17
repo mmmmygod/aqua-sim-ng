@@ -39,6 +39,7 @@ main(int argc, char* argv[])
   tx.SetOriginSeqNo(100);
   tx.SetDestSeqNo(88);
   tx.SetLifetime(120000);
+  tx.SetHopLimit(9);
   tx.SetUnknownDestSeqNo(true);
 
   Ptr<Packet> packet = Create<Packet>();
@@ -48,7 +49,7 @@ main(int argc, char* argv[])
   packet->RemoveHeader(rx);
 
   bool ok = true;
-  ok &= Check(tx.GetSerializedSize() == 24, "serialized size should include sequence fields");
+  ok &= Check(tx.GetSerializedSize() == 26, "serialized size should include sequence and hop-limit fields");
   ok &= Check(rx.GetType() == AquaSimUWAodvHeader::UWAODV_RREQ, "type mismatch");
   ok &= Check(rx.GetHopCount() == 7, "hop count mismatch");
   ok &= Check(rx.GetRequestId() == 12345, "request id mismatch");
@@ -57,6 +58,7 @@ main(int argc, char* argv[])
   ok &= Check(rx.GetOriginSeqNo() == 100, "origin sequence number mismatch");
   ok &= Check(rx.GetDestSeqNo() == 88, "destination sequence number mismatch");
   ok &= Check(rx.GetLifetime() == 120000, "lifetime mismatch");
+  ok &= Check(rx.GetHopLimit() == 9, "hop limit mismatch");
   ok &= Check(rx.IsUnknownDestSeqNo(), "unknown destination sequence flag mismatch");
 
   std::cout << "UW-AODV header serialization check: " << (ok ? "PASS" : "FAIL") << std::endl;

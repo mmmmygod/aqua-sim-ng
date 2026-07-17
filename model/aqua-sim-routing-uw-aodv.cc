@@ -25,6 +25,7 @@ AquaSimUWAodvHeader::AquaSimUWAodvHeader()
     m_originSeqNo(0),
     m_destSeqNo(0),
     m_lifetimeMs(0),
+    m_hopLimit(0),
     m_flags(FLAG_NONE)
 {
 }
@@ -97,6 +98,12 @@ AquaSimUWAodvHeader::SetLifetime(uint32_t lifetimeMs)
 }
 
 void
+AquaSimUWAodvHeader::SetHopLimit(uint16_t hopLimit)
+{
+  m_hopLimit = hopLimit;
+}
+
+void
 AquaSimUWAodvHeader::SetFlags(uint8_t flags)
 {
   m_flags = flags;
@@ -163,6 +170,12 @@ AquaSimUWAodvHeader::GetLifetime() const
   return m_lifetimeMs;
 }
 
+uint16_t
+AquaSimUWAodvHeader::GetHopLimit() const
+{
+  return m_hopLimit;
+}
+
 uint8_t
 AquaSimUWAodvHeader::GetFlags() const
 {
@@ -178,7 +191,7 @@ AquaSimUWAodvHeader::IsUnknownDestSeqNo() const
 uint32_t
 AquaSimUWAodvHeader::GetSerializedSize() const
 {
-  return 24;
+  return 26;
 }
 
 void
@@ -194,6 +207,7 @@ AquaSimUWAodvHeader::Serialize(Buffer::Iterator start) const
   i.WriteU32(m_originSeqNo);
   i.WriteU32(m_destSeqNo);
   i.WriteU32(m_lifetimeMs);
+  i.WriteU16(m_hopLimit);
 }
 
 uint32_t
@@ -209,6 +223,7 @@ AquaSimUWAodvHeader::Deserialize(Buffer::Iterator start)
   m_originSeqNo = i.ReadU32();
   m_destSeqNo = i.ReadU32();
   m_lifetimeMs = i.ReadU32();
+  m_hopLimit = i.ReadU16();
   return GetSerializedSize();
 }
 
@@ -223,6 +238,7 @@ AquaSimUWAodvHeader::Print(std::ostream& os) const
      << " originSeq=" << m_originSeqNo
      << " destSeq=" << m_destSeqNo
      << " lifetimeMs=" << m_lifetimeMs
+     << " hopLimit=" << m_hopLimit
      << " flags=" << static_cast<uint32_t>(m_flags);
 }
 
@@ -232,6 +248,10 @@ AquaSimUWAodvRouting::AquaSimUWAodvRouting()
     m_maxQueueLen(64),
     m_maxRreqAttempts(3),
     m_maxHopCount(32),
+    m_ttlStart(1),
+    m_ttlIncrement(2),
+    m_ttlThreshold(7),
+    m_netDiameter(32),
     m_enableRreqCollection(false),
     m_rreqTimeout(Seconds(3.0)),
     m_rrepWaitTime(Seconds(0.5)),
@@ -284,6 +304,26 @@ AquaSimUWAodvRouting::GetTypeId()
                   "Maximum hop count for RREQ forwarding.",
                   UintegerValue(32),
                   MakeUintegerAccessor(&AquaSimUWAodvRouting::m_maxHopCount),
+                  MakeUintegerChecker<uint16_t>())
+    .AddAttribute("TtlStart",
+                  "Initial hop limit for expanding-ring RREQ discovery.",
+                  UintegerValue(1),
+                  MakeUintegerAccessor(&AquaSimUWAodvRouting::m_ttlStart),
+                  MakeUintegerChecker<uint16_t>())
+    .AddAttribute("TtlIncrement",
+                  "Hop-limit increment for expanding-ring RREQ discovery.",
+                  UintegerValue(2),
+                  MakeUintegerAccessor(&AquaSimUWAodvRouting::m_ttlIncrement),
+                  MakeUintegerChecker<uint16_t>())
+    .AddAttribute("TtlThreshold",
+                  "Hop-limit threshold before using NetDiameter for RREQ discovery.",
+                  UintegerValue(7),
+                  MakeUintegerAccessor(&AquaSimUWAodvRouting::m_ttlThreshold),
+                  MakeUintegerChecker<uint16_t>())
+    .AddAttribute("NetDiameter",
+                  "Network-wide hop limit used after expanding-ring RREQ attempts exceed TtlThreshold.",
+                  UintegerValue(32),
+                  MakeUintegerAccessor(&AquaSimUWAodvRouting::m_netDiameter),
                   MakeUintegerChecker<uint16_t>())
     .AddAttribute("EnableRreqCollection",
                   "If true, a destination waits briefly to collect duplicate RREQ candidates before replying.",
@@ -653,7 +693,12 @@ AquaSimUWAodvRouting::RecvRreq(Ptr<Packet> packet,
       return true;
     }
 
-  if (aodv.GetHopCount() >= m_maxHopCount)
+  uint16_t effectiveHopLimit = aodv.GetHopLimit() == 0 ? m_maxHopCount : aodv.GetHopLimit();
+  if (effectiveHopLimit > m_maxHopCount)
+    {
+      effectiveHopLimit = m_maxHopCount;
+    }
+  if (aodv.GetHopCount() >= effectiveHopLimit)
     {
       return false;
     }
@@ -680,6 +725,7 @@ AquaSimUWAodvRouting::RecvRrep(Ptr<Packet> packet,
     {
       m_activeDiscoveries.erase(aodv.GetDestination());
       m_rreqAttempts.erase(aodv.GetDestination());
+      m_rreqHopLimits.erase(aodv.GetDestination());
       return true;
     }
 
@@ -772,6 +818,7 @@ AquaSimUWAodvRouting::PrepareDataPacket(Ptr<Packet> packet,
   AquaSimUWAodvHeader aodv;
   aodv.SetType(AquaSimUWAodvHeader::UWAODV_DATA);
   aodv.SetHopCount(0);
+  aodv.SetHopLimit(0);
   aodv.SetRequestId(0);
   aodv.SetOrigin(GetLocalAddress());
   aodv.SetDestination(destination);
@@ -921,6 +968,7 @@ void
 AquaSimUWAodvRouting::SendRreq(AquaSimAddress destination)
 {
   uint32_t attempt = ++m_rreqAttempts[destination];
+  uint16_t hopLimit = GetRreqHopLimit(destination, attempt);
   ++m_sequenceNumber;
 
   RouteEntry knownDestinationRoute;
@@ -931,6 +979,7 @@ AquaSimUWAodvRouting::SendRreq(AquaSimAddress destination)
   AquaSimUWAodvHeader aodv;
   aodv.SetType(AquaSimUWAodvHeader::UWAODV_RREQ);
   aodv.SetHopCount(0);
+  aodv.SetHopLimit(hopLimit);
   aodv.SetRequestId(++m_nextRreqId);
   aodv.SetOrigin(GetLocalAddress());
   aodv.SetDestination(destination);
@@ -959,6 +1008,42 @@ AquaSimUWAodvRouting::SendRreq(AquaSimAddress destination)
                       this,
                       destination,
                       attempt);
+}
+
+uint16_t
+AquaSimUWAodvRouting::GetRreqHopLimit(AquaSimAddress destination, uint32_t attempt)
+{
+  uint16_t netDiameter = m_netDiameter == 0 ? m_maxHopCount : m_netDiameter;
+  if (netDiameter > m_maxHopCount)
+    {
+      netDiameter = m_maxHopCount;
+    }
+
+  if (m_ttlStart == 0 || m_ttlIncrement == 0)
+    {
+      m_rreqHopLimits[destination] = netDiameter;
+      return netDiameter;
+    }
+
+  uint16_t hopLimit = m_ttlStart;
+  std::map<AquaSimAddress, uint16_t>::const_iterator it = m_rreqHopLimits.find(destination);
+  if (attempt > 1 && it != m_rreqHopLimits.end())
+    {
+      uint32_t expanded = static_cast<uint32_t>(it->second) + m_ttlIncrement;
+      hopLimit = expanded > 0xffff ? 0xffff : static_cast<uint16_t>(expanded);
+    }
+
+  if (hopLimit > m_ttlThreshold)
+    {
+      hopLimit = netDiameter;
+    }
+  if (hopLimit > netDiameter)
+    {
+      hopLimit = netDiameter;
+    }
+
+  m_rreqHopLimits[destination] = hopLimit;
+  return hopLimit;
 }
 
 void
@@ -1011,6 +1096,7 @@ AquaSimUWAodvRouting::SendRrep(AquaSimAddress origin,
   AquaSimUWAodvHeader aodv;
   aodv.SetType(AquaSimUWAodvHeader::UWAODV_RREP);
   aodv.SetHopCount(destinationHopCount);
+  aodv.SetHopLimit(0);
   aodv.SetRequestId(0);
   aodv.SetOrigin(origin);
   aodv.SetDestination(destination);
@@ -1174,6 +1260,7 @@ AquaSimUWAodvRouting::ForwardRerr(AquaSimAddress unreachableDestination,
       AquaSimUWAodvHeader aodv;
       aodv.SetType(AquaSimUWAodvHeader::UWAODV_RERR);
       aodv.SetHopCount(0);
+      aodv.SetHopLimit(0);
       aodv.SetRequestId(0);
       aodv.SetOrigin(GetLocalAddress());
       aodv.SetDestination(unreachableDestination);
@@ -1278,6 +1365,7 @@ AquaSimUWAodvRouting::RouteRequestTimeout(AquaSimAddress destination, uint32_t a
 
   m_activeDiscoveries.erase(destination);
   m_rreqAttempts.erase(destination);
+  m_rreqHopLimits.erase(destination);
   DropQueuedPackets(destination);
 }
 
@@ -1320,6 +1408,7 @@ AquaSimUWAodvRouting::DoDispose()
   m_routeTable.clear();
   m_pendingQueue.clear();
   m_rreqAttempts.clear();
+  m_rreqHopLimits.clear();
   m_rreqCollections.clear();
   m_activeDiscoveries.clear();
   m_seenRreqs.clear();

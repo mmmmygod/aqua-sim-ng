@@ -15,6 +15,10 @@ NS_LOG_COMPONENT_DEFINE("UwAodvLine");
 
 static uint32_t g_rxPackets = 0;
 static uint32_t g_deliveredPackets = 0;
+static uint32_t g_rreqTx = 0;
+static uint32_t g_rreqRx = 0;
+static uint32_t g_rrepTx = 0;
+static uint32_t g_rrepRx = 0;
 
 static void
 RecvPacket(Ptr<Socket> socket)
@@ -36,12 +40,37 @@ RoutingDelivered(Ptr<const Packet> packet)
                                           << " at " << Simulator::Now().GetSeconds() << "s");
 }
 
+static void
+CountRreqTx(uint32_t oldValue, uint32_t newValue)
+{
+  g_rreqTx += newValue - oldValue;
+}
+
+static void
+CountRreqRx(uint32_t oldValue, uint32_t newValue)
+{
+  g_rreqRx += newValue - oldValue;
+}
+
+static void
+CountRrepTx(uint32_t oldValue, uint32_t newValue)
+{
+  g_rrepTx += newValue - oldValue;
+}
+
+static void
+CountRrepRx(uint32_t oldValue, uint32_t newValue)
+{
+  g_rrepRx += newValue - oldValue;
+}
+
 int
 main(int argc, char* argv[])
 {
   double simStop = 60.0;
   uint32_t packetSize = 32;
   uint32_t dataRate = 200;
+  uint32_t nodeCount = 3;
   double spacing = 800.0;
   double txRange = 1000.0;
 
@@ -49,12 +78,19 @@ main(int argc, char* argv[])
   cmd.AddValue("simStop", "Simulation stop time in seconds", simStop);
   cmd.AddValue("packetSize", "Application packet size in bytes", packetSize);
   cmd.AddValue("dataRate", "OnOff data rate in bit/s", dataRate);
+  cmd.AddValue("nodeCount", "Number of nodes in the line topology", nodeCount);
   cmd.AddValue("spacing", "Distance between adjacent nodes in meters", spacing);
   cmd.AddValue("txRange", "Acoustic transmission range in meters", txRange);
   cmd.Parse(argc, argv);
 
+  if (nodeCount < 2)
+    {
+      std::cerr << "UW-AODV line requires nodeCount >= 2" << std::endl;
+      return 1;
+    }
+
   NodeContainer nodes;
-  nodes.Create(3);
+  nodes.Create(nodeCount);
 
   PacketSocketHelper socketHelper;
   socketHelper.Install(nodes);
@@ -80,9 +116,10 @@ main(int argc, char* argv[])
     }
 
   Ptr<ListPositionAllocator> positions = CreateObject<ListPositionAllocator>();
-  positions->Add(Vector(0.0, 0.0, 0.0));
-  positions->Add(Vector(spacing, 0.0, 0.0));
-  positions->Add(Vector(2.0 * spacing, 0.0, 0.0));
+  for (uint32_t i = 0; i < nodeCount; ++i)
+    {
+      positions->Add(Vector(i * spacing, 0.0, 0.0));
+    }
 
   MobilityHelper mobility;
   mobility.SetPositionAllocator(positions);
@@ -91,7 +128,7 @@ main(int argc, char* argv[])
 
   PacketSocketAddress socket;
   socket.SetAllDevices();
-  socket.SetPhysicalAddress(devices.Get(2)->GetAddress());
+  socket.SetPhysicalAddress(devices.Get(nodeCount - 1)->GetAddress());
   socket.SetProtocol(0);
 
   OnOffHelper app("ns3::PacketSocketFactory", Address(socket));
@@ -105,13 +142,23 @@ main(int argc, char* argv[])
   apps.Stop(Seconds(simStop - 1.0));
 
   TypeId psfid = TypeId::LookupByName("ns3::PacketSocketFactory");
-  Ptr<Socket> sinkSocket = Socket::CreateSocket(nodes.Get(2), psfid);
+  Ptr<Socket> sinkSocket = Socket::CreateSocket(nodes.Get(nodeCount - 1), psfid);
   sinkSocket->Bind(socket);
   sinkSocket->SetRecvCallback(MakeCallback(&RecvPacket));
 
-  Ptr<AquaSimNetDevice> sinkDevice = DynamicCast<AquaSimNetDevice>(devices.Get(2));
+  Ptr<AquaSimNetDevice> sinkDevice = DynamicCast<AquaSimNetDevice>(devices.Get(nodeCount - 1));
   sinkDevice->GetRouting()->TraceConnectWithoutContext("PacketReceived",
                                                        MakeCallback(&RoutingDelivered));
+
+  for (uint32_t i = 0; i < devices.GetN(); ++i)
+    {
+      Ptr<AquaSimNetDevice> device = DynamicCast<AquaSimNetDevice>(devices.Get(i));
+      Ptr<AquaSimRouting> routing = device->GetRouting();
+      routing->TraceConnectWithoutContext("RreqTx", MakeCallback(&CountRreqTx));
+      routing->TraceConnectWithoutContext("RreqRx", MakeCallback(&CountRreqRx));
+      routing->TraceConnectWithoutContext("RrepTx", MakeCallback(&CountRrepTx));
+      routing->TraceConnectWithoutContext("RrepRx", MakeCallback(&CountRrepRx));
+    }
 
   Simulator::Stop(Seconds(simStop));
   Simulator::Run();
@@ -119,6 +166,12 @@ main(int argc, char* argv[])
 
   std::cout << "UW-AODV line socket received packets: " << g_rxPackets << std::endl;
   std::cout << "UW-AODV line routing delivered packets: " << g_deliveredPackets << std::endl;
+  std::cout << "UW-AODV line counters:"
+            << " RreqTx=" << g_rreqTx
+            << " RreqRx=" << g_rreqRx
+            << " RrepTx=" << g_rrepTx
+            << " RrepRx=" << g_rrepRx
+            << std::endl;
   asHelper.GetChannel()->PrintCounters();
   return g_deliveredPackets == 0 ? 1 : 0;
 }
