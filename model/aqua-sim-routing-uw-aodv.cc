@@ -312,6 +312,11 @@ AquaSimUWAodvRouting::GetTypeId()
                   UintegerValue(3),
                   MakeUintegerAccessor(&AquaSimUWAodvRouting::m_maxRreqAttempts),
                   MakeUintegerChecker<uint32_t>())
+    .AddAttribute("RreqRetries",
+                  "AODV-style alias for the maximum total RREQ attempts per pending destination.",
+                  UintegerValue(3),
+                  MakeUintegerAccessor(&AquaSimUWAodvRouting::m_maxRreqAttempts),
+                  MakeUintegerChecker<uint32_t>())
     .AddAttribute("MaxHopCount",
                   "Maximum hop count for RREQ forwarding.",
                   UintegerValue(32),

@@ -19,6 +19,8 @@ static uint32_t g_rreqTx = 0;
 static uint32_t g_rreqRx = 0;
 static uint32_t g_rrepTx = 0;
 static uint32_t g_rrepRx = 0;
+static uint32_t g_noRouteDrops = 0;
+static uint32_t g_queueDrops = 0;
 
 static void
 RecvPacket(Ptr<Socket> socket)
@@ -64,6 +66,18 @@ CountRrepRx(uint32_t oldValue, uint32_t newValue)
   g_rrepRx += newValue - oldValue;
 }
 
+static void
+CountNoRouteDrops(uint32_t oldValue, uint32_t newValue)
+{
+  g_noRouteDrops += newValue - oldValue;
+}
+
+static void
+CountQueueDrops(uint32_t oldValue, uint32_t newValue)
+{
+  g_queueDrops += newValue - oldValue;
+}
+
 int
 main(int argc, char* argv[])
 {
@@ -73,6 +87,7 @@ main(int argc, char* argv[])
   uint32_t nodeCount = 3;
   double spacing = 800.0;
   double txRange = 1000.0;
+  bool expectDelivery = true;
 
   CommandLine cmd;
   cmd.AddValue("simStop", "Simulation stop time in seconds", simStop);
@@ -81,6 +96,7 @@ main(int argc, char* argv[])
   cmd.AddValue("nodeCount", "Number of nodes in the line topology", nodeCount);
   cmd.AddValue("spacing", "Distance between adjacent nodes in meters", spacing);
   cmd.AddValue("txRange", "Acoustic transmission range in meters", txRange);
+  cmd.AddValue("expectDelivery", "If true, require delivered packets; if false, require bounded no-route drops and zero delivery", expectDelivery);
   cmd.Parse(argc, argv);
 
   if (nodeCount < 2)
@@ -158,6 +174,8 @@ main(int argc, char* argv[])
       routing->TraceConnectWithoutContext("RreqRx", MakeCallback(&CountRreqRx));
       routing->TraceConnectWithoutContext("RrepTx", MakeCallback(&CountRrepTx));
       routing->TraceConnectWithoutContext("RrepRx", MakeCallback(&CountRrepRx));
+      routing->TraceConnectWithoutContext("NoRouteDrops", MakeCallback(&CountNoRouteDrops));
+      routing->TraceConnectWithoutContext("QueueDrops", MakeCallback(&CountQueueDrops));
     }
 
   Simulator::Stop(Seconds(simStop));
@@ -171,7 +189,13 @@ main(int argc, char* argv[])
             << " RreqRx=" << g_rreqRx
             << " RrepTx=" << g_rrepTx
             << " RrepRx=" << g_rrepRx
+            << " NoRouteDrops=" << g_noRouteDrops
+            << " QueueDrops=" << g_queueDrops
             << std::endl;
   asHelper.GetChannel()->PrintCounters();
-  return g_deliveredPackets == 0 ? 1 : 0;
+  if (expectDelivery)
+    {
+      return g_deliveredPackets == 0 ? 1 : 0;
+    }
+  return (g_deliveredPackets == 0 && g_noRouteDrops > 0) ? 0 : 1;
 }
