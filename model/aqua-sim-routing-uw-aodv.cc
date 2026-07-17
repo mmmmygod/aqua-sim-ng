@@ -254,6 +254,8 @@ AquaSimUWAodvRouting::AquaSimUWAodvRouting()
     m_netDiameter(32),
     m_enableRreqCollection(false),
     m_rreqTimeout(Seconds(3.0)),
+    m_nodeTraversalTime(Seconds(0.5)),
+    m_timeoutBuffer(2),
     m_rrepWaitTime(Seconds(0.5)),
     m_routeLifetime(Seconds(120.0)),
     m_rreqTx(0),
@@ -281,10 +283,20 @@ AquaSimUWAodvRouting::GetTypeId()
     .SetParent<AquaSimRouting>()
     .AddConstructor<AquaSimUWAodvRouting>()
     .AddAttribute("RreqTimeout",
-                  "Bounded wait before retrying or failing route discovery.",
+                  "Minimum bounded wait before retrying or failing route discovery.",
                   TimeValue(Seconds(3.0)),
                   MakeTimeAccessor(&AquaSimUWAodvRouting::m_rreqTimeout),
                   MakeTimeChecker())
+    .AddAttribute("NodeTraversalTime",
+                  "Estimated one-hop traversal time used to compute expanding-ring RREQ timeout.",
+                  TimeValue(Seconds(0.5)),
+                  MakeTimeAccessor(&AquaSimUWAodvRouting::m_nodeTraversalTime),
+                  MakeTimeChecker())
+    .AddAttribute("TimeoutBuffer",
+                  "Extra hop-count buffer included in expanding-ring RREQ timeout calculation.",
+                  UintegerValue(2),
+                  MakeUintegerAccessor(&AquaSimUWAodvRouting::m_timeoutBuffer),
+                  MakeUintegerChecker<uint16_t>())
     .AddAttribute("RouteLifetime",
                   "Time a learned route remains valid.",
                   TimeValue(Seconds(120.0)),
@@ -1003,7 +1015,7 @@ AquaSimUWAodvRouting::SendRreq(AquaSimAddress destination)
 
   ++m_rreqTx;
   SendDown(packet, AquaSimAddress::GetBroadcast(), Seconds(0));
-  Simulator::Schedule(m_rreqTimeout,
+  Simulator::Schedule(GetRreqTimeout(hopLimit),
                       &AquaSimUWAodvRouting::RouteRequestTimeout,
                       this,
                       destination,
@@ -1044,6 +1056,15 @@ AquaSimUWAodvRouting::GetRreqHopLimit(AquaSimAddress destination, uint32_t attem
 
   m_rreqHopLimits[destination] = hopLimit;
   return hopLimit;
+}
+
+Time
+AquaSimUWAodvRouting::GetRreqTimeout(uint16_t hopLimit) const
+{
+  uint32_t bufferedHopLimit = static_cast<uint32_t>(hopLimit) + m_timeoutBuffer;
+  Time ringTraversalTime =
+    m_nodeTraversalTime * static_cast<int64_t>(2 * bufferedHopLimit);
+  return ringTraversalTime > m_rreqTimeout ? ringTraversalTime : m_rreqTimeout;
 }
 
 void

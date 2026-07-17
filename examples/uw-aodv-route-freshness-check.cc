@@ -72,6 +72,10 @@ public:
                 "fourth expanding-ring RREQ may reach TtlThreshold");
     ok &= Check(routing.GetRreqHopLimit(destination, 5) == 32,
                 "expanding-ring RREQ should switch to NetDiameter after TtlThreshold");
+    ok &= Check(routing.GetRreqTimeout(1) == Seconds(3),
+                "RREQ timeout should include node traversal time and timeout buffer for TTL=1");
+    ok &= Check(routing.GetRreqTimeout(5) == Seconds(7),
+                "RREQ timeout should grow with the RREQ hop limit");
 
     return ok;
   }

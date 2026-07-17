@@ -204,6 +204,7 @@ private:
                    const std::set<AquaSimAddress>& precursors);
   void RouteRequestTimeout(AquaSimAddress destination, uint32_t attempt);
   uint16_t GetRreqHopLimit(AquaSimAddress destination, uint32_t attempt);
+  Time GetRreqTimeout(uint16_t hopLimit) const;
   void AddPrecursor(AquaSimAddress destination, AquaSimAddress precursor);
   std::set<AquaSimAddress> InvalidateRoute(AquaSimAddress destination,
                                            uint32_t destSeqNo,
@@ -234,6 +235,8 @@ private:
   uint16_t m_netDiameter;
   bool m_enableRreqCollection;
   Time m_rreqTimeout;
+  Time m_nodeTraversalTime;
+  uint16_t m_timeoutBuffer;
   Time m_rrepWaitTime;
   Time m_routeLifetime;
 
