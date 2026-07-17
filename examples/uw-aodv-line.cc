@@ -87,6 +87,7 @@ main(int argc, char* argv[])
   uint32_t nodeCount = 3;
   double spacing = 800.0;
   double txRange = 1000.0;
+  double rreqJitter = 0.1;
   bool expectDelivery = true;
 
   CommandLine cmd;
@@ -96,6 +97,7 @@ main(int argc, char* argv[])
   cmd.AddValue("nodeCount", "Number of nodes in the line topology", nodeCount);
   cmd.AddValue("spacing", "Distance between adjacent nodes in meters", spacing);
   cmd.AddValue("txRange", "Acoustic transmission range in meters", txRange);
+  cmd.AddValue("rreqJitter", "Maximum random RREQ broadcast jitter in seconds", rreqJitter);
   cmd.AddValue("expectDelivery", "If true, require delivered packets; if false, require bounded no-route drops and zero delivery", expectDelivery);
   cmd.Parse(argc, argv);
 
@@ -121,7 +123,9 @@ main(int argc, char* argv[])
                       "RreqTimeout",
                       TimeValue(Seconds(1.0)),
                       "MaxRreqAttempts",
-                      UintegerValue(3));
+                      UintegerValue(3),
+                      "RreqJitter",
+                      TimeValue(Seconds(rreqJitter)));
 
   NetDeviceContainer devices;
   for (uint32_t i = 0; i < nodes.GetN(); ++i)

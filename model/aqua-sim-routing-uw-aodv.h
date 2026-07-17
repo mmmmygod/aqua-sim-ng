@@ -9,6 +9,7 @@
 
 #include "ns3/header.h"
 #include "ns3/nstime.h"
+#include "ns3/random-variable-stream.h"
 #include "ns3/traced-value.h"
 
 #include <cstdint>
@@ -205,6 +206,7 @@ private:
   void RouteRequestTimeout(AquaSimAddress destination, uint32_t attempt);
   uint16_t GetRreqHopLimit(AquaSimAddress destination, uint32_t attempt);
   Time GetRreqTimeout(uint16_t hopLimit) const;
+  Time GetRreqJitter() const;
   void AddPrecursor(AquaSimAddress destination, AquaSimAddress precursor);
   std::set<AquaSimAddress> InvalidateRoute(AquaSimAddress destination,
                                            uint32_t destSeqNo,
@@ -237,8 +239,10 @@ private:
   Time m_rreqTimeout;
   Time m_nodeTraversalTime;
   uint16_t m_timeoutBuffer;
+  Time m_rreqJitter;
   Time m_rrepWaitTime;
   Time m_routeLifetime;
+  Ptr<UniformRandomVariable> m_uniformRandomVariable;
 
   TracedValue<uint32_t> m_rreqTx;
   TracedValue<uint32_t> m_rreqRx;

@@ -256,8 +256,10 @@ AquaSimUWAodvRouting::AquaSimUWAodvRouting()
     m_rreqTimeout(Seconds(3.0)),
     m_nodeTraversalTime(Seconds(0.5)),
     m_timeoutBuffer(2),
+    m_rreqJitter(Seconds(0.1)),
     m_rrepWaitTime(Seconds(0.5)),
     m_routeLifetime(Seconds(120.0)),
+    m_uniformRandomVariable(CreateObject<UniformRandomVariable>()),
     m_rreqTx(0),
     m_rreqRx(0),
     m_rrepTx(0),
@@ -297,6 +299,11 @@ AquaSimUWAodvRouting::GetTypeId()
                   UintegerValue(2),
                   MakeUintegerAccessor(&AquaSimUWAodvRouting::m_timeoutBuffer),
                   MakeUintegerChecker<uint16_t>())
+    .AddAttribute("RreqJitter",
+                  "Maximum random delay added before broadcasting or forwarding a RREQ.",
+                  TimeValue(Seconds(0.1)),
+                  MakeTimeAccessor(&AquaSimUWAodvRouting::m_rreqJitter),
+                  MakeTimeChecker())
     .AddAttribute("RouteLifetime",
                   "Time a learned route remains valid.",
                   TimeValue(Seconds(120.0)),
@@ -403,7 +410,8 @@ int64_t
 AquaSimUWAodvRouting::AssignStreams(int64_t stream)
 {
   NS_LOG_FUNCTION(this << stream);
-  return 0;
+  m_uniformRandomVariable->SetStream(stream);
+  return 1;
 }
 
 bool
@@ -1019,7 +1027,7 @@ AquaSimUWAodvRouting::SendRreq(AquaSimAddress destination)
   packet->AddHeader(ash);
 
   ++m_rreqTx;
-  SendDown(packet, AquaSimAddress::GetBroadcast(), Seconds(0));
+  SendDown(packet, AquaSimAddress::GetBroadcast(), GetRreqJitter());
   Simulator::Schedule(GetRreqTimeout(hopLimit),
                       &AquaSimUWAodvRouting::RouteRequestTimeout,
                       this,
@@ -1070,6 +1078,17 @@ AquaSimUWAodvRouting::GetRreqTimeout(uint16_t hopLimit) const
   Time ringTraversalTime =
     m_nodeTraversalTime * static_cast<int64_t>(2 * bufferedHopLimit);
   return ringTraversalTime > m_rreqTimeout ? ringTraversalTime : m_rreqTimeout;
+}
+
+Time
+AquaSimUWAodvRouting::GetRreqJitter() const
+{
+  if (m_rreqJitter.IsZero() || m_rreqJitter.IsNegative())
+    {
+      return Seconds(0);
+    }
+
+  return Seconds(m_uniformRandomVariable->GetValue(0.0, m_rreqJitter.GetSeconds()));
 }
 
 void
@@ -1238,7 +1257,7 @@ AquaSimUWAodvRouting::ForwardRreq(Ptr<Packet> packet,
   packet->AddHeader(ash);
 
   ++m_rreqTx;
-  SendDown(packet, AquaSimAddress::GetBroadcast(), Seconds(0));
+  SendDown(packet, AquaSimAddress::GetBroadcast(), GetRreqJitter());
 }
 
 void
