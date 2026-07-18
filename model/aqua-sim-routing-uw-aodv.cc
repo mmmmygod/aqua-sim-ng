@@ -259,6 +259,10 @@ AquaSimUWAodvRouting::AquaSimUWAodvRouting()
     m_rreqJitter(Seconds(0.1)),
     m_rrepWaitTime(Seconds(0.5)),
     m_routeLifetime(Seconds(120.0)),
+    m_enableHello(false),
+    m_helloStarted(false),
+    m_helloInterval(Seconds(10.0)),
+    m_allowedHelloLoss(2),
     m_uniformRandomVariable(CreateObject<UniformRandomVariable>()),
     m_rreqTx(0),
     m_rreqRx(0),
@@ -266,6 +270,8 @@ AquaSimUWAodvRouting::AquaSimUWAodvRouting()
     m_rrepRx(0),
     m_rerrTx(0),
     m_rerrRx(0),
+    m_helloTx(0),
+    m_helloRx(0),
     m_queuedPackets(0),
     m_queueDrops(0),
     m_forwardedData(0),
@@ -359,6 +365,21 @@ AquaSimUWAodvRouting::GetTypeId()
                   TimeValue(Seconds(0.5)),
                   MakeTimeAccessor(&AquaSimUWAodvRouting::m_rrepWaitTime),
                   MakeTimeChecker())
+    .AddAttribute("EnableHello",
+                  "If true, periodically broadcast HELLO packets and expire stale neighbors.",
+                  BooleanValue(false),
+                  MakeBooleanAccessor(&AquaSimUWAodvRouting::m_enableHello),
+                  MakeBooleanChecker())
+    .AddAttribute("HelloInterval",
+                  "Interval between optional HELLO broadcasts.",
+                  TimeValue(Seconds(10.0)),
+                  MakeTimeAccessor(&AquaSimUWAodvRouting::m_helloInterval),
+                  MakeTimeChecker())
+    .AddAttribute("AllowedHelloLoss",
+                  "Number of missed HELLO intervals before a neighbor is considered lost.",
+                  UintegerValue(2),
+                  MakeUintegerAccessor(&AquaSimUWAodvRouting::m_allowedHelloLoss),
+                  MakeUintegerChecker<uint16_t>())
     .AddTraceSource("RreqTx",
                     "Number of RREQ packets transmitted.",
                     MakeTraceSourceAccessor(&AquaSimUWAodvRouting::m_rreqTx),
@@ -382,6 +403,14 @@ AquaSimUWAodvRouting::GetTypeId()
     .AddTraceSource("RerrRx",
                     "Number of RERR packets received.",
                     MakeTraceSourceAccessor(&AquaSimUWAodvRouting::m_rerrRx),
+                    "ns3::TracedValueCallback::Uint32")
+    .AddTraceSource("HelloTx",
+                    "Number of HELLO packets transmitted.",
+                    MakeTraceSourceAccessor(&AquaSimUWAodvRouting::m_helloTx),
+                    "ns3::TracedValueCallback::Uint32")
+    .AddTraceSource("HelloRx",
+                    "Number of HELLO packets received.",
+                    MakeTraceSourceAccessor(&AquaSimUWAodvRouting::m_helloRx),
                     "ns3::TracedValueCallback::Uint32")
     .AddTraceSource("QueuedPackets",
                     "Number of data packets queued during route discovery.",
@@ -422,6 +451,8 @@ AquaSimUWAodvRouting::Recv(Ptr<Packet> packet, const Address& dest, uint16_t pro
     {
       return false;
     }
+
+  MaybeStartHello();
 
   AquaSimHeader ash;
   packet->PeekHeader(ash);
@@ -600,6 +631,7 @@ AquaSimUWAodvRouting::RecvAodvPacket(Ptr<Packet> packet)
     }
 
   AquaSimAddress previousHop = ash.GetSAddr();
+  UpdateNeighbor(previousHop);
   switch (aodv.GetType())
     {
     case AquaSimUWAodvHeader::UWAODV_DATA:
@@ -613,6 +645,9 @@ AquaSimUWAodvRouting::RecvAodvPacket(Ptr<Packet> packet)
     case AquaSimUWAodvHeader::UWAODV_RERR:
       ++m_rerrRx;
       return RecvRerr(packet, ash, aodv, previousHop);
+    case AquaSimUWAodvHeader::UWAODV_HELLO:
+      ++m_helloRx;
+      return RecvHello(packet, ash, aodv, previousHop);
     default:
       NS_LOG_DEBUG("Dropping unknown UWAODV packet type "
                    << static_cast<uint32_t>(aodv.GetType()));
@@ -792,8 +827,23 @@ AquaSimUWAodvRouting::RecvRerr(Ptr<Packet> packet,
 }
 
 bool
+AquaSimUWAodvRouting::RecvHello(Ptr<Packet> packet,
+                                AquaSimHeader ash,
+                                AquaSimUWAodvHeader aodv,
+                                AquaSimAddress previousHop)
+{
+  (void)packet;
+  (void)ash;
+  (void)aodv;
+  UpdateNeighbor(previousHop);
+  return true;
+}
+
+bool
 AquaSimUWAodvRouting::RouteOutput(Ptr<Packet> packet, const Address& dest)
 {
+  MaybeStartHello();
+
   AquaSimHeader ash;
   packet->RemoveHeader(ash);
   AquaSimAddress destination = ash.GetDAddr();
@@ -1392,6 +1442,130 @@ AquaSimUWAodvRouting::ShouldAcceptRerr(AquaSimAddress destination, uint32_t dest
 }
 
 void
+AquaSimUWAodvRouting::MaybeStartHello()
+{
+  if (!m_enableHello || m_helloStarted)
+    {
+      return;
+    }
+
+  m_helloStarted = true;
+  Simulator::Schedule(GetRreqJitter(), &AquaSimUWAodvRouting::SendHello, this);
+}
+
+void
+AquaSimUWAodvRouting::SendHello()
+{
+  if (!m_enableHello)
+    {
+      return;
+    }
+
+  PurgeDeadNeighbors();
+
+  Ptr<Packet> packet = Create<Packet>();
+  AquaSimUWAodvHeader aodv;
+  aodv.SetType(AquaSimUWAodvHeader::UWAODV_HELLO);
+  aodv.SetHopCount(0);
+  aodv.SetHopLimit(1);
+  aodv.SetRequestId(0);
+  aodv.SetOrigin(GetLocalAddress());
+  aodv.SetDestination(AquaSimAddress::GetBroadcast());
+  aodv.SetOriginSeqNo(m_sequenceNumber);
+  aodv.SetDestSeqNo(m_sequenceNumber);
+  aodv.SetLifetime(static_cast<uint32_t>(m_helloInterval.GetMilliSeconds()));
+
+  AquaSimHeader ash;
+  ash.SetDirection(AquaSimHeader::DOWN);
+  ash.SetNextHop(AquaSimAddress::GetBroadcast());
+  ash.SetSAddr(GetLocalAddress());
+  ash.SetDAddr(AquaSimAddress::GetBroadcast());
+  ash.SetSize(aodv.GetSerializedSize() + ash.GetSerializedSize());
+  ash.SetUId(packet->GetUid());
+  ash.SetTimeStamp(Simulator::Now());
+
+  AddAodvTag(packet);
+  packet->AddHeader(aodv);
+  packet->AddHeader(ash);
+
+  ++m_helloTx;
+  SendDown(packet, AquaSimAddress::GetBroadcast(), Seconds(0));
+  Simulator::Schedule(m_helloInterval, &AquaSimUWAodvRouting::SendHello, this);
+}
+
+void
+AquaSimUWAodvRouting::UpdateNeighbor(AquaSimAddress neighbor)
+{
+  if (!m_enableHello ||
+      neighbor == GetLocalAddress() ||
+      neighbor == AquaSimAddress::GetBroadcast())
+    {
+      return;
+    }
+
+  m_neighbors[neighbor] = Simulator::Now();
+}
+
+void
+AquaSimUWAodvRouting::PurgeDeadNeighbors()
+{
+  if (!m_enableHello)
+    {
+      return;
+    }
+
+  Time allowedLossTime = Seconds(m_helloInterval.GetSeconds() * m_allowedHelloLoss);
+  std::vector<AquaSimAddress> lostNeighbors;
+  for (std::map<AquaSimAddress, Time>::const_iterator it = m_neighbors.begin();
+       it != m_neighbors.end();
+       ++it)
+    {
+      if (Simulator::Now() - it->second > allowedLossTime)
+        {
+          lostNeighbors.push_back(it->first);
+        }
+    }
+
+  for (std::vector<AquaSimAddress>::const_iterator it = lostNeighbors.begin();
+       it != lostNeighbors.end();
+       ++it)
+    {
+      m_neighbors.erase(*it);
+      InvalidateRoutesViaNeighbor(*it);
+    }
+}
+
+void
+AquaSimUWAodvRouting::InvalidateRoutesViaNeighbor(AquaSimAddress neighbor)
+{
+  std::vector<AquaSimAddress> affectedDestinations;
+  for (std::map<AquaSimAddress, RouteEntry>::const_iterator it = m_routeTable.begin();
+       it != m_routeTable.end();
+       ++it)
+    {
+      if (it->second.valid && it->second.nextHop == neighbor)
+        {
+          affectedDestinations.push_back(it->first);
+        }
+    }
+
+  for (std::vector<AquaSimAddress>::const_iterator it = affectedDestinations.begin();
+       it != affectedDestinations.end();
+       ++it)
+    {
+      RouteEntry route;
+      if (!LookupAnyRoute(*it, route) || !route.valid)
+        {
+          continue;
+        }
+
+      uint32_t unreachableSeqNo = route.validSeqNo ? route.destSeqNo + 1 : m_sequenceNumber;
+      std::set<AquaSimAddress> precursors = InvalidateRoute(*it, unreachableSeqNo, true);
+      SendRerr(*it, unreachableSeqNo, precursors);
+    }
+}
+
+void
 AquaSimUWAodvRouting::RouteRequestTimeout(AquaSimAddress destination, uint32_t attempt)
 {
   if (m_activeDiscoveries.find(destination) == m_activeDiscoveries.end() ||
@@ -1455,8 +1629,11 @@ AquaSimUWAodvRouting::DoDispose()
   m_rreqAttempts.clear();
   m_rreqHopLimits.clear();
   m_rreqCollections.clear();
+  m_neighbors.clear();
   m_activeDiscoveries.clear();
   m_seenRreqs.clear();
+  m_enableHello = false;
+  m_helloStarted = false;
   AquaSimRouting::DoDispose();
 }
 

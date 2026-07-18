@@ -17,6 +17,7 @@
 #include <map>
 #include <set>
 #include <utility>
+#include <vector>
 
 namespace ns3 {
 
@@ -36,7 +37,8 @@ public:
     UWAODV_DATA = 1,
     UWAODV_RREQ = 2,
     UWAODV_RREP = 3,
-    UWAODV_RERR = 4
+    UWAODV_RERR = 4,
+    UWAODV_HELLO = 5
   };
 
   enum Flags
@@ -174,6 +176,10 @@ private:
                 AquaSimHeader ash,
                 AquaSimUWAodvHeader aodv,
                 AquaSimAddress previousHop);
+  bool RecvHello(Ptr<Packet> packet,
+                 AquaSimHeader ash,
+                 AquaSimUWAodvHeader aodv,
+                 AquaSimAddress previousHop);
 
   bool RouteOutput(Ptr<Packet> packet, const Address& dest);
   void PrepareDataPacket(Ptr<Packet> packet, AquaSimHeader& ash, AquaSimAddress destination);
@@ -212,6 +218,11 @@ private:
                                            uint32_t destSeqNo,
                                            bool validSeqNo);
   bool ShouldAcceptRerr(AquaSimAddress destination, uint32_t destSeqNo) const;
+  void MaybeStartHello();
+  void SendHello();
+  void UpdateNeighbor(AquaSimAddress neighbor);
+  void PurgeDeadNeighbors();
+  void InvalidateRoutesViaNeighbor(AquaSimAddress neighbor);
 
   void AddAodvTag(Ptr<Packet> packet);
   bool IsAodvPacket(Ptr<Packet> packet) const;
@@ -223,6 +234,7 @@ private:
   std::map<AquaSimAddress, uint32_t> m_rreqAttempts;
   std::map<AquaSimAddress, uint16_t> m_rreqHopLimits;
   std::map<RequestKey, RreqCollection> m_rreqCollections;
+  std::map<AquaSimAddress, Time> m_neighbors;
   std::set<AquaSimAddress> m_activeDiscoveries;
   std::set<RequestKey> m_seenRreqs;
 
@@ -242,6 +254,10 @@ private:
   Time m_rreqJitter;
   Time m_rrepWaitTime;
   Time m_routeLifetime;
+  bool m_enableHello;
+  bool m_helloStarted;
+  Time m_helloInterval;
+  uint16_t m_allowedHelloLoss;
   Ptr<UniformRandomVariable> m_uniformRandomVariable;
 
   TracedValue<uint32_t> m_rreqTx;
@@ -250,6 +266,8 @@ private:
   TracedValue<uint32_t> m_rrepRx;
   TracedValue<uint32_t> m_rerrTx;
   TracedValue<uint32_t> m_rerrRx;
+  TracedValue<uint32_t> m_helloTx;
+  TracedValue<uint32_t> m_helloRx;
   TracedValue<uint32_t> m_queuedPackets;
   TracedValue<uint32_t> m_queueDrops;
   TracedValue<uint32_t> m_forwardedData;

@@ -21,6 +21,8 @@ static uint32_t g_rrepTx = 0;
 static uint32_t g_rrepRx = 0;
 static uint32_t g_noRouteDrops = 0;
 static uint32_t g_queueDrops = 0;
+static uint32_t g_helloTx = 0;
+static uint32_t g_helloRx = 0;
 
 static void
 RecvPacket(Ptr<Socket> socket)
@@ -78,6 +80,18 @@ CountQueueDrops(uint32_t oldValue, uint32_t newValue)
   g_queueDrops += newValue - oldValue;
 }
 
+static void
+CountHelloTx(uint32_t oldValue, uint32_t newValue)
+{
+  g_helloTx += newValue - oldValue;
+}
+
+static void
+CountHelloRx(uint32_t oldValue, uint32_t newValue)
+{
+  g_helloRx += newValue - oldValue;
+}
+
 int
 main(int argc, char* argv[])
 {
@@ -88,6 +102,9 @@ main(int argc, char* argv[])
   double spacing = 800.0;
   double txRange = 1000.0;
   double rreqJitter = 0.1;
+  bool enableHello = false;
+  double helloInterval = 10.0;
+  uint32_t allowedHelloLoss = 2;
   bool expectDelivery = true;
 
   CommandLine cmd;
@@ -98,6 +115,9 @@ main(int argc, char* argv[])
   cmd.AddValue("spacing", "Distance between adjacent nodes in meters", spacing);
   cmd.AddValue("txRange", "Acoustic transmission range in meters", txRange);
   cmd.AddValue("rreqJitter", "Maximum random RREQ broadcast jitter in seconds", rreqJitter);
+  cmd.AddValue("enableHello", "Enable optional UW-AODV HELLO neighbor maintenance", enableHello);
+  cmd.AddValue("helloInterval", "HELLO broadcast interval in seconds", helloInterval);
+  cmd.AddValue("allowedHelloLoss", "Number of missed HELLO intervals before neighbor expiry", allowedHelloLoss);
   cmd.AddValue("expectDelivery", "If true, require delivered packets; if false, require bounded no-route drops and zero delivery", expectDelivery);
   cmd.Parse(argc, argv);
 
@@ -125,7 +145,13 @@ main(int argc, char* argv[])
                       "MaxRreqAttempts",
                       UintegerValue(3),
                       "RreqJitter",
-                      TimeValue(Seconds(rreqJitter)));
+                      TimeValue(Seconds(rreqJitter)),
+                      "EnableHello",
+                      BooleanValue(enableHello),
+                      "HelloInterval",
+                      TimeValue(Seconds(helloInterval)),
+                      "AllowedHelloLoss",
+                      UintegerValue(allowedHelloLoss));
 
   NetDeviceContainer devices;
   for (uint32_t i = 0; i < nodes.GetN(); ++i)
@@ -180,6 +206,8 @@ main(int argc, char* argv[])
       routing->TraceConnectWithoutContext("RrepRx", MakeCallback(&CountRrepRx));
       routing->TraceConnectWithoutContext("NoRouteDrops", MakeCallback(&CountNoRouteDrops));
       routing->TraceConnectWithoutContext("QueueDrops", MakeCallback(&CountQueueDrops));
+      routing->TraceConnectWithoutContext("HelloTx", MakeCallback(&CountHelloTx));
+      routing->TraceConnectWithoutContext("HelloRx", MakeCallback(&CountHelloRx));
     }
 
   Simulator::Stop(Seconds(simStop));
@@ -195,6 +223,8 @@ main(int argc, char* argv[])
             << " RrepRx=" << g_rrepRx
             << " NoRouteDrops=" << g_noRouteDrops
             << " QueueDrops=" << g_queueDrops
+            << " HelloTx=" << g_helloTx
+            << " HelloRx=" << g_helloRx
             << std::endl;
   asHelper.GetChannel()->PrintCounters();
   if (expectDelivery)
