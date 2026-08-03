@@ -41,6 +41,9 @@ main(int argc, char* argv[])
   tx.SetLifetime(120000);
   tx.SetHopLimit(9);
   tx.SetUnknownDestSeqNo(true);
+  tx.SetAckRequired(true);
+  tx.SetGratuitousRrep(true);
+  tx.SetDestinationOnly(true);
 
   Ptr<Packet> packet = Create<Packet>();
   packet->AddHeader(tx);
@@ -60,6 +63,26 @@ main(int argc, char* argv[])
   ok &= Check(rx.GetLifetime() == 120000, "lifetime mismatch");
   ok &= Check(rx.GetHopLimit() == 9, "hop limit mismatch");
   ok &= Check(rx.IsUnknownDestSeqNo(), "unknown destination sequence flag mismatch");
+  ok &= Check(rx.IsAckRequired(), "RREP_ACK-required flag mismatch");
+  ok &= Check(rx.IsGratuitousRrep(), "gratuitous RREP flag mismatch");
+  ok &= Check(rx.IsDestinationOnly(), "destination-only flag mismatch");
+
+  AquaSimUWAodvHeader ackTx;
+  ackTx.SetType(AquaSimUWAodvHeader::UWAODV_RREP_ACK);
+  ackTx.SetOrigin(AquaSimAddress(3));
+  ackTx.SetDestination(AquaSimAddress(2));
+
+  Ptr<Packet> ackPacket = Create<Packet>();
+  ackPacket->AddHeader(ackTx);
+
+  AquaSimUWAodvHeader ackRx;
+  ackPacket->RemoveHeader(ackRx);
+  ok &= Check(ackRx.GetType() == AquaSimUWAodvHeader::UWAODV_RREP_ACK,
+              "RREP_ACK packet type should serialize and deserialize");
+  ok &= Check(ackRx.GetOrigin() == AquaSimAddress(3),
+              "RREP_ACK origin mismatch");
+  ok &= Check(ackRx.GetDestination() == AquaSimAddress(2),
+              "RREP_ACK destination mismatch");
 
   std::cout << "UW-AODV header serialization check: " << (ok ? "PASS" : "FAIL") << std::endl;
   return ok ? 0 : 1;

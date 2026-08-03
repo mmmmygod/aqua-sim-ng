@@ -22,6 +22,7 @@ static uint32_t g_rerrTx = 0;
 static uint32_t g_rerrRx = 0;
 static uint32_t g_forwardedData = 0;
 static uint32_t g_noRouteDrops = 0;
+static uint32_t g_duplicateDataDrops = 0;
 
 static void
 RoutingDelivered(Ptr<const Packet> packet)
@@ -79,16 +80,24 @@ CountNoRouteDrops(uint32_t oldValue, uint32_t newValue)
   g_noRouteDrops += newValue - oldValue;
 }
 
+static void
+CountDuplicateDataDrops(uint32_t oldValue, uint32_t newValue)
+{
+  g_duplicateDataDrops += newValue - oldValue;
+}
+
 int
 main(int argc, char* argv[])
 {
-  double simStop = 35.0;
+  double simStop = 90.0;
   uint32_t packetSize = 32;
   uint32_t dataRate = 200;
   double spacing = 800.0;
   double txRange = 1000.0;
   double routeLifetime = 4.0;
   double rreqTimeout = 1.0;
+  double firstStop = 4.0;
+  double secondStart = 60.0;
 
   CommandLine cmd;
   cmd.AddValue("simStop", "Simulation stop time in seconds", simStop);
@@ -96,8 +105,12 @@ main(int argc, char* argv[])
   cmd.AddValue("dataRate", "OnOff data rate in bit/s", dataRate);
   cmd.AddValue("spacing", "Distance between adjacent nodes in meters", spacing);
   cmd.AddValue("txRange", "Acoustic transmission range in meters", txRange);
-  cmd.AddValue("routeLifetime", "Short route lifetime used to force route expiry in seconds", routeLifetime);
+  cmd.AddValue("routeLifetime",
+               "Short active and destination-RREP route lifetime used to force route expiry in seconds",
+               routeLifetime);
   cmd.AddValue("rreqTimeout", "Route discovery retry timeout in seconds", rreqTimeout);
+  cmd.AddValue("firstStop", "Stop time for the first traffic burst in seconds", firstStop);
+  cmd.AddValue("secondStart", "Start time for the second traffic burst after route expiry in seconds", secondStart);
   cmd.Parse(argc, argv);
 
   NodeContainer nodes;
@@ -115,7 +128,9 @@ main(int argc, char* argv[])
   asHelper.SetRouting("ns3::AquaSimUWAodvRouting",
                       "RreqTimeout",
                       TimeValue(Seconds(rreqTimeout)),
-                      "RouteLifetime",
+                      "ActiveRouteTimeout",
+                      TimeValue(Seconds(routeLifetime)),
+                      "MyRouteTimeout",
                       TimeValue(Seconds(routeLifetime)),
                       "MaxRreqAttempts",
                       UintegerValue(4));
@@ -149,9 +164,13 @@ main(int argc, char* argv[])
   app.SetAttribute("DataRate", DataRateValue(DataRate(dataRate)));
   app.SetAttribute("PacketSize", UintegerValue(packetSize));
 
-  ApplicationContainer apps = app.Install(nodes.Get(0));
-  apps.Start(Seconds(2.0));
-  apps.Stop(Seconds(simStop - 1.0));
+  ApplicationContainer firstBurst = app.Install(nodes.Get(0));
+  firstBurst.Start(Seconds(2.0));
+  firstBurst.Stop(Seconds(firstStop));
+
+  ApplicationContainer secondBurst = app.Install(nodes.Get(0));
+  secondBurst.Start(Seconds(secondStart));
+  secondBurst.Stop(Seconds(simStop - 1.0));
 
   Ptr<AquaSimNetDevice> sinkDevice = DynamicCast<AquaSimNetDevice>(devices.Get(2));
   sinkDevice->GetRouting()->TraceConnectWithoutContext("PacketReceived",
@@ -169,14 +188,16 @@ main(int argc, char* argv[])
       routing->TraceConnectWithoutContext("RerrRx", MakeCallback(&CountRerrRx));
       routing->TraceConnectWithoutContext("ForwardedData", MakeCallback(&CountForwardedData));
       routing->TraceConnectWithoutContext("NoRouteDrops", MakeCallback(&CountNoRouteDrops));
+      routing->TraceConnectWithoutContext("DuplicateDataDrops",
+                                          MakeCallback(&CountDuplicateDataDrops));
     }
 
   Simulator::Stop(Seconds(simStop));
   Simulator::Run();
   Simulator::Destroy();
 
-  std::cout << "UW-AODV RERR expiry routing delivered packets: " << g_deliveredPackets << std::endl;
-  std::cout << "UW-AODV RERR expiry counters:"
+  std::cout << "UW-AODV route expiry routing delivered packets: " << g_deliveredPackets << std::endl;
+  std::cout << "UW-AODV route expiry counters:"
             << " RreqTx=" << g_rreqTx
             << " RreqRx=" << g_rreqRx
             << " RrepTx=" << g_rrepTx
@@ -185,8 +206,9 @@ main(int argc, char* argv[])
             << " RerrRx=" << g_rerrRx
             << " ForwardedData=" << g_forwardedData
             << " NoRouteDrops=" << g_noRouteDrops
+            << " DuplicateDataDrops=" << g_duplicateDataDrops
             << std::endl;
   asHelper.GetChannel()->PrintCounters();
 
-  return (g_deliveredPackets > 0 && g_rerrTx > 0 && g_rerrRx > 0 && g_rreqTx > 2) ? 0 : 1;
+  return (g_deliveredPackets > 0 && g_rreqTx > 2 && g_rrepTx > 2 && g_noRouteDrops == 0) ? 0 : 1;
 }

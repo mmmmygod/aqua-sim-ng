@@ -99,7 +99,8 @@ AquaSimTdmaMac::RecvProcess (Ptr<Packet> pkt)
 	}
 
   // read the next sender id
-  if (AquaSimAddress::ConvertFrom(m_device->GetAddress()) == dst)
+  if (dst == AquaSimAddress::GetBroadcast() ||
+      AquaSimAddress::ConvertFrom(m_device->GetAddress()) == dst)
   {
     // trace the E2E delay
     AquaSimTimeTag timeTag;
@@ -169,7 +170,9 @@ AquaSimTdmaMac::SendPacket (Ptr<Packet> packet)
 
   packet->RemoveHeader(ash);
   mach.SetSA(ash.GetSAddr());
-  mach.SetDA(ash.GetDAddr());
+  // The MAC must address the immediate receiver.  The AquaSim header keeps
+  // the end-to-end destination for the routing layer.
+  mach.SetDA(ash.GetNextHop());
   mach.SetDemuxPType(MacHeader::UWPTYPE_OTHER);
 
   packet->AddHeader(mach);

@@ -25,6 +25,8 @@
 #include "ns3/double.h"
 #include "ns3/simulator.h"
 
+#include <cmath>
+
 using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE ("AquaSimRangePropagation");
@@ -32,6 +34,7 @@ NS_OBJECT_ENSURE_REGISTERED (AquaSimRangePropagation);
 
 
 AquaSimRangePropagation::AquaSimRangePropagation()
+  : m_propagationSpeed(0.0)
 {
 }
 
@@ -44,6 +47,11 @@ AquaSimRangePropagation::GetTypeId()
     .AddAttribute("Bandwidth", "Bandwidth of propagation in Hz.",
       DoubleValue(4096),
       MakeDoubleAccessor(&AquaSimRangePropagation::m_bandwidth),
+      MakeDoubleChecker<double>())
+    .AddAttribute("PropagationSpeed",
+      "If positive, override the calculated acoustic propagation speed in m/s; zero uses the acoustic model.",
+      DoubleValue(0.0),
+      MakeDoubleAccessor(&AquaSimRangePropagation::m_propagationSpeed),
       MakeDoubleChecker<double>())
     .AddAttribute("Temperature", "Temperature of water (C).",
       DoubleValue(25),
@@ -118,6 +126,14 @@ AquaSimRangePropagation::ReceivedCopies (Ptr<AquaSimNetDevice> s,
 	return res;
 }
 
+Time
+AquaSimRangePropagation::PDelay(Ptr<MobilityModel> s, Ptr<MobilityModel> r)
+{
+  const double distance = s->GetDistanceFrom(r);
+  const double depth = std::fabs(r->GetPosition().z - s->GetPosition().z);
+  return Time::FromDouble(distance / AcousticSpeed(depth), Time::S);
+}
+
 /*
  * Gives the acoustic speed based on propagation conditions.
  * Model from Mackenzie, JASA, 1981.
@@ -128,6 +144,11 @@ AquaSimRangePropagation::ReceivedCopies (Ptr<AquaSimNetDevice> s,
 double
 AquaSimRangePropagation::AcousticSpeed(double depth)
 {
+  if (m_propagationSpeed > 0.0)
+    {
+      return m_propagationSpeed;
+    }
+
   double s = m_salinity - 35;
   double d = depth/2;
 
@@ -143,6 +164,11 @@ AquaSimRangePropagation::AcousticSpeed(double depth)
 double
 AquaSimRangePropagation::AcousticSpeedVaryingTemp(double depth)
 {
+  if (m_propagationSpeed > 0.0)
+    {
+      return m_propagationSpeed;
+    }
+
   double s = m_salinity - 35;
   double d = depth/2;
   double t = LayerTemp(depth);

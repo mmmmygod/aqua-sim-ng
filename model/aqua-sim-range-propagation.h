@@ -59,6 +59,7 @@ public:
   virtual std::vector<PktRecvUnit> * ReceivedCopies (Ptr<AquaSimNetDevice> s,
                  Ptr<Packet> p,
                  std::vector<Ptr<AquaSimNetDevice> > dList);
+  Time PDelay(Ptr<MobilityModel> s, Ptr<MobilityModel> r) override;
   double AcousticSpeed(double depth);
   double AcousticSpeedVaryingTemp(double depth);
   double Urick(Ptr<AquaSimNetDevice> sender, Ptr<AquaSimNetDevice> recver);
@@ -78,6 +79,7 @@ protected:
 
 private:
   double m_bandwidth;
+  double m_propagationSpeed;
   double m_temp;  //for singular temperature use only
   double m_salinity;
   double m_noiseLvl;

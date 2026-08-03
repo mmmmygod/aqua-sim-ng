@@ -218,6 +218,29 @@ build_lib_example(
 )
 
 build_lib_example(
+    NAME uw-aodv-control-flags-check
+    SOURCE_FILES examples/uw-aodv-control-flags-check.cc
+    LIBRARIES_TO_LINK ${libnetwork}
+                      ${libaqua-sim-ng}
+)
+
+build_lib_example(
+    NAME uw-aodv-broadcast
+    SOURCE_FILES examples/uw-aodv-broadcast.cc
+    LIBRARIES_TO_LINK ${libnetwork}
+                      ${libmobility}
+                      ${libaqua-sim-ng}
+)
+
+build_lib_example(
+    NAME uw-target-baseline
+    SOURCE_FILES examples/uw-target-baseline.cc
+    LIBRARIES_TO_LINK ${libnetwork}
+                      ${libmobility}
+                      ${libaqua-sim-ng}
+)
+
+build_lib_example(
     NAME uw-aodv-rerr-expiry
     SOURCE_FILES examples/uw-aodv-rerr-expiry.cc
     LIBRARIES_TO_LINK ${libnetwork}
@@ -229,6 +252,15 @@ build_lib_example(
 build_lib_example(
     NAME uw-aodv-hello-break
     SOURCE_FILES examples/uw-aodv-hello-break.cc
+    LIBRARIES_TO_LINK ${libnetwork}
+                      ${libmobility}
+                      ${libapplications}
+                      ${libaqua-sim-ng}
+)
+
+build_lib_example(
+    NAME uw-aodv-rrep-ack
+    SOURCE_FILES examples/uw-aodv-rrep-ack.cc
     LIBRARIES_TO_LINK ${libnetwork}
                       ${libmobility}
                       ${libapplications}

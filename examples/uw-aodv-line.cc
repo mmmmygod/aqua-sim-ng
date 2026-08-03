@@ -19,8 +19,12 @@ static uint32_t g_rreqTx = 0;
 static uint32_t g_rreqRx = 0;
 static uint32_t g_rrepTx = 0;
 static uint32_t g_rrepRx = 0;
+static uint32_t g_rrepAckTx = 0;
+static uint32_t g_rrepAckRx = 0;
+static uint32_t g_blacklistAdds = 0;
 static uint32_t g_noRouteDrops = 0;
 static uint32_t g_queueDrops = 0;
+static uint32_t g_duplicateDataDrops = 0;
 static uint32_t g_helloTx = 0;
 static uint32_t g_helloRx = 0;
 
@@ -69,6 +73,24 @@ CountRrepRx(uint32_t oldValue, uint32_t newValue)
 }
 
 static void
+CountRrepAckTx(uint32_t oldValue, uint32_t newValue)
+{
+  g_rrepAckTx += newValue - oldValue;
+}
+
+static void
+CountRrepAckRx(uint32_t oldValue, uint32_t newValue)
+{
+  g_rrepAckRx += newValue - oldValue;
+}
+
+static void
+CountBlacklistAdds(uint32_t oldValue, uint32_t newValue)
+{
+  g_blacklistAdds += newValue - oldValue;
+}
+
+static void
 CountNoRouteDrops(uint32_t oldValue, uint32_t newValue)
 {
   g_noRouteDrops += newValue - oldValue;
@@ -78,6 +100,12 @@ static void
 CountQueueDrops(uint32_t oldValue, uint32_t newValue)
 {
   g_queueDrops += newValue - oldValue;
+}
+
+static void
+CountDuplicateDataDrops(uint32_t oldValue, uint32_t newValue)
+{
+  g_duplicateDataDrops += newValue - oldValue;
 }
 
 static void
@@ -204,8 +232,13 @@ main(int argc, char* argv[])
       routing->TraceConnectWithoutContext("RreqRx", MakeCallback(&CountRreqRx));
       routing->TraceConnectWithoutContext("RrepTx", MakeCallback(&CountRrepTx));
       routing->TraceConnectWithoutContext("RrepRx", MakeCallback(&CountRrepRx));
+      routing->TraceConnectWithoutContext("RrepAckTx", MakeCallback(&CountRrepAckTx));
+      routing->TraceConnectWithoutContext("RrepAckRx", MakeCallback(&CountRrepAckRx));
+      routing->TraceConnectWithoutContext("BlacklistAdds", MakeCallback(&CountBlacklistAdds));
       routing->TraceConnectWithoutContext("NoRouteDrops", MakeCallback(&CountNoRouteDrops));
       routing->TraceConnectWithoutContext("QueueDrops", MakeCallback(&CountQueueDrops));
+      routing->TraceConnectWithoutContext("DuplicateDataDrops",
+                                          MakeCallback(&CountDuplicateDataDrops));
       routing->TraceConnectWithoutContext("HelloTx", MakeCallback(&CountHelloTx));
       routing->TraceConnectWithoutContext("HelloRx", MakeCallback(&CountHelloRx));
     }
@@ -221,8 +254,12 @@ main(int argc, char* argv[])
             << " RreqRx=" << g_rreqRx
             << " RrepTx=" << g_rrepTx
             << " RrepRx=" << g_rrepRx
+            << " RrepAckTx=" << g_rrepAckTx
+            << " RrepAckRx=" << g_rrepAckRx
+            << " BlacklistAdds=" << g_blacklistAdds
             << " NoRouteDrops=" << g_noRouteDrops
             << " QueueDrops=" << g_queueDrops
+            << " DuplicateDataDrops=" << g_duplicateDataDrops
             << " HelloTx=" << g_helloTx
             << " HelloRx=" << g_helloRx
             << std::endl;
